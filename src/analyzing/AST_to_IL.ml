@@ -708,53 +708,56 @@ and expr_aux env ?(void = false) g_expr =
       try
         (* Deconstruct the call expression 'e' AND the arguments tuple 'args' *)
         match e.e, args with
-        (* Is it a '.let' call on Kotlin with a single lambda argument? *)
-        | G.DotAccess (receiver_g_expr, _, G.FN (G.Id (("let", _), _))),
+        (* Is it a scope function call on Kotlin with a single lambda argument? *)
+        | G.DotAccess (receiver_g_expr, _, G.FN (G.Id ((name, _), _))),
           (l_paren, [ G.Arg ({ e = G.Lambda fdef; _ } as lambda_g_expr) ], r_paren)
           when env.lang =*= Lang.Kotlin ->
-            (match Tok.unbracket fdef.fparams with
-            (* Does the lambda have exactly one parameter (explicit or our synthetic 'it')? *)
-            | [ G.Param { pname = Some param_id; pinfo = param_id_info; _ } ] ->
-                (
-                  (* Create a G.Assign expression representing 'param = receiver' *)
-                  let param_g_name = G.Id (param_id, param_id_info) in
-                  let lhs_g_expr = G.e (G.N param_g_name) in
-                  let assign_g_expr = G.e (G.Assign (lhs_g_expr, (G.fake "="), receiver_g_expr)) in
-                  let new_assign_g_stmt = G.s (G.ExprStmt (assign_g_expr, (G.fake ";"))) in
+            (
+              match name with
+              | "let" | "also" -> (* Handle scope functions that pass 'it' as an argument *)
+                (match Tok.unbracket fdef.fparams with
+                (* Does the lambda have exactly one parameter (explicit or our synthetic 'it')? *)
+                | [ G.Param { pname = Some param_id; pinfo = param_id_info; _ } ] ->
+                    (
+                      (* Create a G.Assign expression representing 'param = receiver' *)
+                      let param_g_name = G.Id (param_id, param_id_info) in
+                      let lhs_g_expr = G.e (G.N param_g_name) in
+                      let assign_g_expr = G.e (G.Assign (lhs_g_expr, (G.fake "="), receiver_g_expr)) in
+                      let new_assign_g_stmt = G.s (G.ExprStmt (assign_g_expr, (G.fake ";"))) in
 
-                  (* Get the existing statements from the lambda body and prepend the new one *)
-                  let new_fbody =
-                    match fdef.fbody with
-                    | G.FBStmt { s = G.Block (l, stmts, r); _ } ->
-                        let new_block_stmt = G.s (G.Block (l, new_assign_g_stmt :: stmts, r)) in
-                        G.FBStmt new_block_stmt
-                    | G.FBStmt other_stmt ->
-                        let new_block_stmt = G.s (G.Block (G.fake "{", [new_assign_g_stmt; other_stmt], G.fake "}")) in
-                        G.FBStmt new_block_stmt
-                    | G.FBExpr body_expr ->
-                        let body_stmt = G.s (G.ExprStmt (body_expr, G.fake ";")) in
-                        let new_block_stmt = G.s (G.Block (G.fake "{", [new_assign_g_stmt; body_stmt], G.fake "}")) in
-                        G.FBStmt new_block_stmt
-                    | G.FBDecl _ ->
-                        let new_block_stmt = G.s (G.Block (G.fake "{", [new_assign_g_stmt], G.fake "}")) in
-                        G.FBStmt new_block_stmt
-                    | G.FBNothing ->
-                        let new_block_stmt = G.s (G.Block (G.fake "{", [new_assign_g_stmt], G.fake "}")) in
-                        G.FBStmt new_block_stmt
-                  in
+                      (* Get the existing statements from the lambda body and prepend the new one *)
+                      let new_fbody =
+                        match fdef.fbody with
+                        | G.FBStmt { s = G.Block (l, stmts, r); _ } ->
+                            let new_block_stmt = G.s (G.Block (l, new_assign_g_stmt :: stmts, r)) in
+                            G.FBStmt new_block_stmt
+                        | G.FBStmt other_stmt ->
+                            let new_block_stmt = G.s (G.Block (G.fake "{", [new_assign_g_stmt; other_stmt], G.fake "}")) in
+                            G.FBStmt new_block_stmt
+                        | G.FBExpr body_expr ->
+                            let body_stmt = G.s (G.ExprStmt (body_expr, G.fake ";")) in
+                            let new_block_stmt = G.s (G.Block (G.fake "{", [new_assign_g_stmt; body_stmt], G.fake "}")) in
+                            G.FBStmt new_block_stmt
+                        | G.FBDecl _ | G.FBNothing ->
+                            let new_block_stmt = G.s (G.Block (G.fake "{", [new_assign_g_stmt], G.fake "}")) in
+                            G.FBStmt new_block_stmt
+                      in
 
-                  (* Reconstruct the lambda with the new body *)
-                  let new_fdef = { fdef with fbody = new_fbody } in
-                  let new_lambda_g_expr = { lambda_g_expr with e = G.Lambda new_fdef } in
-                  let new_arg = G.Arg new_lambda_g_expr in
+                      (* Reconstruct the lambda with the new body *)
+                      let new_fdef = { fdef with fbody = new_fbody } in
+                      let new_lambda_g_expr = { lambda_g_expr with e = G.Lambda new_fdef } in
+                      let new_arg = G.Arg new_lambda_g_expr in
 
-                  (* Return the original call 'e' but with the new arguments tuple *)
-                  (e, (l_paren, [new_arg], r_paren))
+                      (* Return the original call expression but with the modified lambda as its argument *)
+                      (e, (l_paren, [new_arg], r_paren))
+                    )
+                (* Not a single-parameter lambda, do nothing special *)
+                | _ -> (e, args)
                 )
-            (* Not a single-parameter lambda, do nothing special *)
-            | _ -> (e, args)
+              (* Not a scope function we handle, do nothing special *)
+              | _ -> (e, args)
             )
-        (* Not a '.let' call that matches our pattern, do nothing special *)
+        (* Not a scope function call that matches our pattern, do nothing special *)
         | _ -> (e, args)
       (* In case of any error during transformation, fallback to the original *)
       with _ -> (e, args)
