@@ -714,7 +714,7 @@ and expr_aux env ?(void = false) g_expr =
           when env.lang =*= Lang.Kotlin ->
             (
               match name with
-              | "let" | "also" -> (* Handle scope functions that pass 'it' as an argument *)
+              | "let" | "also" | "use" | "takeIf" | "takeUnless" -> (* Handle scope functions that pass 'it' as an argument *)
                 (match Tok.unbracket fdef.fparams with
                 (* Does the lambda have exactly one parameter (explicit or our synthetic 'it')? *)
                 | [ G.Param { pname = Some param_id; pinfo = param_id_info; _ } ] ->
