@@ -1,0 +1,13 @@
+rules:
+- id: toplevel-incomplete-statements
+  languages: [dart]
+  severity: INFO
+  message: "Successfully matched a Dart pattern for a top-level definition or an incomplete statement: $X"
+  patterns:
+    - pattern-either:
+        # Test Case 1: Matching a top-level class definition
+        - pattern: class $X { ... }
+        # Test Case 2: Matching a top-level enum definition
+        - pattern: enum $X { ... }
+        # Test Case 3: Matching a variable declaration without a semicolon
+        - pattern: var $X = $VALUE
